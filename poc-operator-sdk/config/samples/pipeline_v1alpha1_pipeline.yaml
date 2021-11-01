@@ -1,0 +1,11 @@
+apiVersion: pipeline.example.com/v1alpha1
+kind: Pipeline
+metadata:
+  name: pipeline-sample
+spec:
+  envs:
+    - name: "TESTE"
+      value: "OLA"
+    - name: "TEST"
+      value: "HELLO"
+  timeout: 60
