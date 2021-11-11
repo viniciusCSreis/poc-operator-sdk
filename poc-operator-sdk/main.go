@@ -18,6 +18,7 @@ package main
 
 import (
 	"flag"
+	"k8s.io/client-go/kubernetes"
 	"os"
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
@@ -65,7 +66,11 @@ func main() {
 
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
 
-	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
+	k8sRestConfig := ctrl.GetConfigOrDie()
+
+	k8sClient := kubernetes.NewForConfigOrDie(k8sRestConfig)
+
+	mgr, err := ctrl.NewManager(k8sRestConfig, ctrl.Options{
 		Scheme:                 scheme,
 		MetricsBindAddress:     metricsAddr,
 		Port:                   9443,
@@ -79,8 +84,9 @@ func main() {
 	}
 
 	if err = (&controllers.PipelineReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
+		Client:    mgr.GetClient(),
+		Scheme:    mgr.GetScheme(),
+		K8sClient: k8sClient,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "Pipeline")
 		os.Exit(1)

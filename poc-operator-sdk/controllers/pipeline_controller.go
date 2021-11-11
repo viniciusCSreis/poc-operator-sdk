@@ -17,12 +17,14 @@ limitations under the License.
 package controllers
 
 import (
+	"bufio"
 	"context"
 	"fmt"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/kubernetes"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"time"
 
@@ -43,7 +45,8 @@ const controllerLabel = "controller_name"
 // PipelineReconciler reconciles a Pipeline object
 type PipelineReconciler struct {
 	client.Client
-	Scheme *runtime.Scheme
+	K8sClient *kubernetes.Clientset
+	Scheme    *runtime.Scheme
 }
 
 //+kubebuilder:rbac:groups=pipeline.example.com,resources=pipelines,verbs=get;list;watch;create;update;patch;delete
@@ -151,7 +154,7 @@ func (r *PipelineReconciler) podForPipeline(pipeline *pipelinev1alpha1.Pipeline)
 		Containers: []v1.Container{
 			{
 				Name:  "dennis",
-				Image: "k8s.gcr.io/echoserver:1.4",
+				Image: "generic-dockerimage:local",
 				Env:   containerEnvs,
 			},
 		},
@@ -193,13 +196,17 @@ func (r *PipelineReconciler) processSuccess(
 ) error {
 	logger := log.FromContext(ctx)
 
+	if pipeline.Status.Phase == SucceededPhase {
+		return nil
+	}
+
 	logs, err := r.getPodLogs(ctx, pod)
 	if err != nil {
 		logger.Error(err, "fail to get pod logs")
 		return err
 	}
 
-	pipeline.Status.Phase = RunningPhase
+	pipeline.Status.Phase = SucceededPhase
 	pipeline.Status.Logs = logs
 	logger.Info(fmt.Sprintf("Updating pipeline.Status.Phase to %s", pipeline.Status.Phase))
 	logger.Info(fmt.Sprintf("Updating pipeline.Status.Logs to %s", pipeline.Status.Logs))
@@ -214,6 +221,10 @@ func (r *PipelineReconciler) processFailed(
 	ctx context.Context, pipeline *pipelinev1alpha1.Pipeline,
 ) error {
 	logger := log.FromContext(ctx)
+
+	if pipeline.Status.Phase == FailedPhase {
+		return nil
+	}
 	pipeline.Status.Phase = FailedPhase
 	logger.Info(fmt.Sprintf("Updating pipeline.Status.Phase to %s", pipeline.Status.Phase))
 	if err := r.Status().Update(ctx, pipeline); err != nil {
@@ -224,21 +235,20 @@ func (r *PipelineReconciler) processFailed(
 }
 
 func (r *PipelineReconciler) getPodLogs(ctx context.Context, pod *v1.Pod) (string, error) {
-	//opts := v1.PodLogOptions{
-	//	Follow: true,
-	//}
-	//req := r.K8sClient.CoreV1().Pods(pod.Namespace).GetLogs(pod.Name, &opts)
-	//podLogs, err := req.Stream(ctx)
-	//if err != nil {
-	//	return "", err
-	//}
-	//
-	//logs := ""
-	//scanner := bufio.NewScanner(podLogs)
-	//for scanner.Scan() {
-	//	msg := scanner.Text() + "\n"
-	//	logs += msg
-	//}
-	//return logs, nil
-	return "fala bino", nil
+	opts := v1.PodLogOptions{
+		Follow: true,
+	}
+	req := r.K8sClient.CoreV1().Pods(pod.Namespace).GetLogs(pod.Name, &opts)
+	podLogs, err := req.Stream(ctx)
+	if err != nil {
+		return "", err
+	}
+
+	logs := ""
+	scanner := bufio.NewScanner(podLogs)
+	for scanner.Scan() {
+		msg := scanner.Text() + "\n"
+		logs += msg
+	}
+	return logs, nil
 }

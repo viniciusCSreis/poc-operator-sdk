@@ -1,0 +1,6 @@
+IMG_NAME="generic-dockerimage:local"
+
+build-kind:
+	docker build -t ${IMG_NAME} .
+	docker run -it -e MSG_TO_PRINT="${USER}" ${IMG_NAME}
+	kind load docker-image ${IMG_NAME}

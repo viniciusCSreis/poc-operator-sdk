@@ -1,11 +1,9 @@
 apiVersion: pipeline.example.com/v1alpha1
 kind: Pipeline
 metadata:
-  name: pipeline-sample
+  name: pipeline-sample-3
 spec:
   envs:
-    - name: "TESTE"
-      value: "OLA"
-    - name: "TEST"
-      value: "HELLO"
+    - name: "MSG_TO_PRINT"
+      value: "BLA_BLOW"
   timeout: 60
