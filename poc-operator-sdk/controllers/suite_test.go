@@ -17,64 +17,305 @@ limitations under the License.
 package controllers
 
 import (
+	"context"
+	"fmt"
+	"github.com/google/uuid"
+	pipelinev1alpha1 "github.com/viniciusCSreis/poc-operator-sdk/api/v1alpha1"
+	v1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/kubernetes"
 	"path/filepath"
+	ctrl "sigs.k8s.io/controller-runtime"
 	"testing"
+	"time"
 
-	. "github.com/onsi/ginkgo"
-	. "github.com/onsi/gomega"
 	"k8s.io/client-go/kubernetes/scheme"
-	"k8s.io/client-go/rest"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
-	"sigs.k8s.io/controller-runtime/pkg/envtest/printer"
-	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
-
-	pipelinev1alpha1 "github.com/viniciusCSreis/poc-operator-sdk/api/v1alpha1"
 	//+kubebuilder:scaffold:imports
 )
 
 // These tests use Ginkgo (BDD-style Go testing framework). Refer to
 // http://onsi.github.io/ginkgo/ to learn more about Ginkgo.
 
-var cfg *rest.Config
+const (
+	timeout   = time.Second * 10
+	interval  = time.Millisecond * 250
+	namespace = "default"
+)
+
+var ctx = context.Background()
 var k8sClient client.Client
 var testEnv *envtest.Environment
+var mgr ctrl.Manager
 
-func TestAPIs(t *testing.T) {
-	RegisterFailHandler(Fail)
+//to run using make use: make test
+func TestController_success_integration(t *testing.T) {
 
-	RunSpecsWithDefaultAndCustomReporters(t,
-		"Controller Suite",
-		[]Reporter{printer.NewlineReporter{}})
+	tests := []struct {
+		name  string
+		logic func(t *testing.T)
+	}{
+		{
+			name:  "Run with success",
+			logic: runWithSuccess,
+		},
+		{
+			name:  "Handle FailedPhase",
+			logic: handleFailedPhase,
+		},
+	}
+
+	startEnvTest()
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tt.logic(t)
+		})
+	}
+
+	stopEnvTest()
+
 }
 
-var _ = BeforeSuite(func() {
-	logf.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
+func handleFailedPhase(t *testing.T) {
 
-	By("bootstrapping test environment")
+	pipelineName := "test-pipeline-" + uuid.New().String()
+
+	pipeline := createPipeline(pipelineName, namespace)
+	err := k8sClient.Create(ctx, pipeline)
+	if err != nil {
+		panic(err)
+	}
+
+	pipelineLookupKey := types.NamespacedName{Name: pipelineName, Namespace: namespace}
+	createdPipeline := &pipelinev1alpha1.Pipeline{}
+
+	//Wait Status Pending
+	wait(t, func() bool {
+		err := k8sClient.Get(ctx, pipelineLookupKey, createdPipeline)
+		if err != nil || createdPipeline.Status.Phase != PendingPhase {
+			return false
+		}
+		return true
+	}, timeout, interval)
+
+	//Wait Pod to be created
+	podLookupKey := types.NamespacedName{Name: pipelineName, Namespace: namespace}
+	createdPod := &v1.Pod{}
+	wait(t, func() bool {
+		err := k8sClient.Get(ctx, podLookupKey, createdPod)
+		return err == nil
+	}, timeout, interval)
+
+	testLabel(t, createdPod.Labels, controllerLabel, pipelineName)
+
+	//Change Pod ContainerStatuses to ErrImagePull
+	createdPod.Status.Phase = FailedPhase
+	err = k8sClient.Status().Update(ctx, createdPod)
+	if err != nil {
+		panic(err)
+	}
+
+	//Wait Pipeline Phase Failed
+	wait(t, func() bool {
+		err := k8sClient.Get(ctx, pipelineLookupKey, createdPipeline)
+		if err != nil || createdPipeline.Status.Phase != FailedPhase {
+			return false
+		}
+		return true
+	}, timeout, interval)
+}
+
+func runWithSuccess(t *testing.T) {
+
+	pipelineName := "test-pipeline-" + uuid.New().String()
+
+	pipeline := createPipeline(pipelineName, namespace)
+	err := k8sClient.Create(ctx, pipeline)
+	if err != nil {
+		panic(err)
+	}
+
+	pipelineLookupKey := types.NamespacedName{Name: pipelineName, Namespace: namespace}
+	createdPipeline := &pipelinev1alpha1.Pipeline{}
+
+	//Wait Status Pending
+	wait(t, func() bool {
+		err := k8sClient.Get(ctx, pipelineLookupKey, createdPipeline)
+		if err != nil || createdPipeline.Status.Phase != PendingPhase {
+			return false
+		}
+		return true
+	}, timeout, interval)
+
+	//Wait Pod to be created
+	podLookupKey := types.NamespacedName{Name: pipelineName, Namespace: namespace}
+	createdPod := &v1.Pod{}
+	wait(t, func() bool {
+		err := k8sClient.Get(ctx, podLookupKey, createdPod)
+		return err == nil
+	}, timeout, interval)
+
+	testLabel(t, createdPod.Labels, controllerLabel, pipelineName)
+
+	//Change pod Phase to Running
+	createdPod.Status.Phase = RunningPhase
+	err = k8sClient.Status().Update(ctx, createdPod)
+	if err != nil {
+		panic(err)
+	}
+
+	//Wait Pipeline Phase Running
+	wait(t, func() bool {
+		err := k8sClient.Get(ctx, pipelineLookupKey, createdPipeline)
+		if err != nil || createdPipeline.Status.Phase != RunningPhase {
+			return false
+		}
+		return true
+	}, timeout, interval)
+
+	//Change pod Phase to Succeed
+	createdPod.Status.Phase = SucceededPhase
+	err = k8sClient.Status().Update(ctx, createdPod)
+	if err != nil {
+		panic(err)
+	}
+
+	//Wait Pipeline Phase Running
+	wait(t, func() bool {
+		err := k8sClient.Get(ctx, pipelineLookupKey, createdPipeline)
+		if err != nil || createdPipeline.Status.Phase != SucceededPhase {
+			return false
+		}
+		return true
+	}, timeout, interval)
+}
+
+func stopEnvTest() {
+	err := testEnv.Stop()
+	if err != nil {
+		fmt.Printf("Err:%v", err.Error())
+	}
+	time.Sleep(time.Second * 5)
+}
+
+func startEnvTest() {
+	opts := zap.Options{
+		Development: true,
+	}
+	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
 	testEnv = &envtest.Environment{
 		CRDDirectoryPaths:     []string{filepath.Join("..", "config", "crd", "bases")},
 		ErrorIfCRDPathMissing: true,
 	}
 
 	cfg, err := testEnv.Start()
-	Expect(err).NotTo(HaveOccurred())
-	Expect(cfg).NotTo(BeNil())
+	if err != nil {
+		panic(err)
+	}
+	if cfg == nil {
+		panic("cfg is nil")
+	}
 
 	err = pipelinev1alpha1.AddToScheme(scheme.Scheme)
-	Expect(err).NotTo(HaveOccurred())
-
-	//+kubebuilder:scaffold:scheme
+	if err != nil {
+		panic(err)
+	}
 
 	k8sClient, err = client.New(cfg, client.Options{Scheme: scheme.Scheme})
-	Expect(err).NotTo(HaveOccurred())
-	Expect(k8sClient).NotTo(BeNil())
+	if err != nil {
+		panic(err)
+	}
+	if k8sClient == nil {
+		panic("k8sClient is nil")
+	}
 
-}, 60)
+	mgr, err = ctrl.NewManager(cfg, ctrl.Options{
+		Scheme:                 scheme.Scheme,
+		MetricsBindAddress:     ":0",
+		Port:                   9443,
+		HealthProbeBindAddress: ":0",
+		LeaderElection:         false,
+		LeaderElectionID:       "7f0c45a6.example.com",
+	})
+	if err != nil {
+		panic(err)
+	}
 
-var _ = AfterSuite(func() {
-	By("tearing down the test environment")
-	err := testEnv.Stop()
-	Expect(err).NotTo(HaveOccurred())
-})
+	k8sClientSet := kubernetes.NewForConfigOrDie(cfg)
+
+	controller := &PipelineReconciler{
+		Client:    mgr.GetClient(),
+		Scheme:    mgr.GetScheme(),
+		K8sClient: k8sClientSet,
+	}
+
+	err = controller.SetupWithManager(mgr)
+	if err != nil {
+		panic(err)
+	}
+
+	go func() {
+		err = mgr.Start(ctx)
+		if err != nil {
+			panic(err)
+		}
+	}()
+}
+
+func wait(t *testing.T, logic func() bool, timeout, interval time.Duration) {
+	if logic() == true {
+		return
+	}
+
+	timeoutTime := time.Now().Add(timeout)
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	for range ticker.C {
+		if logic() == true {
+			return
+		}
+		if time.Now().After(timeoutTime) {
+			break
+		}
+	}
+
+	t.Helper()
+	t.Errorf("timeout error")
+
+}
+
+func createPipeline(name, namespace string) *pipelinev1alpha1.Pipeline {
+	return &pipelinev1alpha1.Pipeline{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: "pipeline.example.com/v1alpha1",
+			Kind:       "Pipeline",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+		},
+		Spec: pipelinev1alpha1.PipelineSpec{
+			Envs: []pipelinev1alpha1.PipelineEnvs{
+				{
+					Name:  "MSG_TO_PRINT",
+					Value: "BLA_BLOW",
+				},
+			},
+
+			Timeout: 30,
+		},
+	}
+}
+
+func testLabel(t *testing.T, labels map[string]string, labelName string, want string) {
+	if labels[labelName] != want {
+		t.Helper()
+		t.Errorf("Wrong label %s got: %s want: %s",
+			labelName, labels[labelName], want)
+	}
+}
