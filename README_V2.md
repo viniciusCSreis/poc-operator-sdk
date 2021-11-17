@@ -8,7 +8,7 @@ https://sdk.operatorframework.io/docs/installation/
 Para usuarios windows:
 fazer o build do repo: https://github.com/operator-framework/operator-sdk
 
-##Criar a estrutura inicial do projeto
+## Criar a estrutura inicial do projeto
 
 - criar uma pasta vazia
 ```
@@ -30,10 +30,10 @@ operator-sdk create api --group pipeline --version v1alpha1 --kind Pipeline --re
 
 ## Alterar CRD gerado
 
-Agora que o seu projeto vou gerado e já temos uma api, vamos alterar os
-valores do arquivo: `api/pipeline_types.go` onde definiremos nosso CRD.
+Agora que o seu projeto foi gerado e já temos uma api, vamos alterar os
+valores do arquivo: `api/pipeline_types.go` onde iremos definir nosso CRD.
 
-altere para:
+Altere para:
 
 ```go
 type PipelineEnvs struct {
@@ -66,12 +66,12 @@ make generate manifests
 ```
 
 Para verificar se realmente gerou acesse o arquivos acesse:
-`config/crd/bases/pipeline.example.com_pipelines.yaml` e verrifique se existe
+`config/crd/bases/pipeline.example.com_pipelines.yaml` e verifique se existe
 em spec possue a properties Envs,Timeout e em status a properties Phase e Logs. 
 Tambem é possivel observar que o comentario acima da variavel
 nas structs geram o campo description das properties no crd.
 
-##Mudar comportamento do operator
+## Mudar comportamento do operator
 
 Agora que você já definiou o CRD precisamos mudar o comportamento do
 operator para após a criação da CRD criar uma pod, esperar a pod ficar
@@ -81,7 +81,7 @@ Para mudar o comportamento do operator basta mudar o arquivo
 `controllers/pipeline_controller.go`
 
 Primeiro devemos alterar a função SetupWithManager nessa função definimos
-os eventos que chamaram a função Reconcile, por padrão está confiurado
+os eventos que chamaram a função Reconcile, por padrão está configurado
 para qualquer alteração no objeto pipeline chamar a função Reconcile
 mas como tambem iremos criar um pod vamos alterar essa função para ouvir
 eventos de pod criadas pela pipeline:
@@ -151,11 +151,11 @@ O codigo completo pode ser encontrado em:
 `controllers/pipeline_controller.go`
 
 
-##Gerar imagem docker da pod
+## Gerar imagem docker da pod
 A ideia é criar uma pod, esperar a pod ficar pronta e salvar os logs no CRD.
 porem para criar uma pod precisamos definir qual a imagem docker a pod
-vai rodar, utilizando o kind ou k3d você pode buildar imagem docker localmente
-e importar no cluster 
+vai rodar, utilizando o kind ou k3d você pode fazer o build imagem docker
+localmente e importar no cluster 
 
 k3d:
 
@@ -171,7 +171,7 @@ cd generic-dockerimage
 make build-kind
 ```
 
-#Rodar aplicação
+## Rodar aplicação
 Para rodar a aplicação:
 
 ```
@@ -185,7 +185,7 @@ Para criar um crd
 kubectl apply -f config/samples/pipeline_v1alpha1_pipeline.yaml
 ```
 
-#k8s.io/client-go
+## k8s.io/client-go
 
 Um dos nossos objetivos é salvar os logs no CRD porem utilizando apenas o client
 do controller-runtime(client fornecido pelo operator-sdk) não é possivel
@@ -232,4 +232,23 @@ func (r *PipelineReconciler) getPodLogs(ctx context.Context, pod *v1.Pod) (strin
 	return logs, nil
 }
 ```
+
+## Test controller
+
+Por padrão o operator sdk cria o arquivo suite_test.go, esse arquivo tem a
+responsabilidade de testar os nossos controllers.
+
+Para realizar o teste do controller o time do operator sdk incentiva
+não a criação de mocks da api do k8s mas a utilização do envtest que é um
+binario que simula um ambiente k8s.
+
+Para instalar o envtest é so utilizar o comando:
+```
+make envtest
+```
+
+Além disso o time do operator sdk incentiva a utilização do framework ginkgo
+para a criação de testes utilizando o BDD porem para não deixar essa poc
+muito complexa para realizar os testes dos controller irei utilizar a 
+biblioteca padrão de test do golang.
 
