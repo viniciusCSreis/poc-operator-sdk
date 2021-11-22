@@ -197,6 +197,7 @@ func runWithSuccess(t *testing.T) {
 func stopEnvTest() {
 	err := testEnv.Stop()
 	if err != nil {
+		//https://github.com/kubernetes-sigs/controller-runtime/issues/1571
 		fmt.Printf("Err:%v", err.Error())
 	}
 	time.Sleep(time.Second * 5)
