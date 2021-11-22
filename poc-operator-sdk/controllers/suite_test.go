@@ -112,7 +112,7 @@ func handleFailedPhase(t *testing.T) {
 
 	testLabel(t, createdPod.Labels, controllerLabel, pipelineName)
 
-	//Change Pod ContainerStatuses to ErrImagePull
+	//Change Pod Status.Phase Failed
 	createdPod.Status.Phase = FailedPhase
 	err = k8sClient.Status().Update(ctx, createdPod)
 	if err != nil {

@@ -153,7 +153,7 @@ func (r *PipelineReconciler) podForPipeline(pipeline *pipelinev1alpha1.Pipeline)
 		TerminationGracePeriodSeconds: &terminationGracePeriodSeconds,
 		Containers: []v1.Container{
 			{
-				Name:  "dennis",
+				Name:  "generic-dockerimage",
 				Image: "generic-dockerimage:local",
 				Env:   containerEnvs,
 			},
