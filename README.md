@@ -248,7 +248,47 @@ make envtest
 ```
 
 Além disso o time do operator sdk incentiva a utilização do framework ginkgo
-para a criação de testes utilizando o BDD porem para não deixar essa poc
-muito complexa para realizar os testes dos controller irei utilizar a
-biblioteca padrão de test do golang.
+para a criação de testes utilizando o BDD porém para não deixar essa poc muito
+complexa, nos testes dos controller iremos utilizar a biblioteca padrão de
+test do golang e o padrão de table test gerado automaticamente pela IDE goland.
+
+```go
+func TestController_success_integration(t *testing.T) {
+
+	tests := []struct {
+		name  string
+		logic func(t *testing.T)
+	}{
+		{
+			name:  "Run with success",
+			logic: runWithSuccess,
+		},
+		{
+			name:  "Handle FailedPhase",
+			logic: handleFailedPhase,
+		},
+	}
+
+	startEnvTest()
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tt.logic(t)
+		})
+	}
+
+	stopEnvTest()
+
+}
+```
+A implementação completa dos testes podem ser encontrado em:
+https://github.com/viniciusCSreis/poc-operator-sdk
+
+Uma sugestão é alterar o make test gerado automaticamente e adicionar 
+a flag -v ao go test assim é possível visualizar os logs do operator
+ao rodar os testes. Logo para rodar todos os testes é só executar:
+
+```
+make test
+```
 
